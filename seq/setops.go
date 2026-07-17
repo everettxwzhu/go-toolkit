@@ -1,6 +1,11 @@
 package seq
 
-import "iter"
+import (
+	"hash/maphash"
+	"iter"
+
+	"github.com/everettxwzhu/go-toolkit/hashmap"
+)
 
 // UnionBy returns the first value for each key encountered in s followed by
 // the first new value for each key encountered in other.
@@ -21,6 +26,41 @@ func (s Seq[T]) UnionBy[K comparable](other Seq[T], key func(T) K) Seq[T] {
 				}
 			}
 
+			return true
+		}
+
+		if !emit(s) {
+			return
+		}
+		emit(other)
+	})
+}
+
+// UnionByHasher returns the first value for each key encountered in s followed
+// by the first new value for each key encountered in other. Hasher defines
+// hashing and equality for keys, so K need not satisfy comparable.
+func (s Seq[T]) UnionByHasher[
+	K any,
+	H maphash.Hasher[K],
+](
+	other Seq[T],
+	key func(T) K,
+	hasher H,
+) Seq[T] {
+	return FromSeq(func(yield func(T) bool) {
+		seen := hashmap.New[K, struct{}](hasher)
+
+		emit := func(values Seq[T]) bool {
+			for value := range values.All() {
+				_, exists := seen.Set(key(value), struct{}{})
+				if exists {
+					continue
+				}
+
+				if !yield(value) {
+					return false
+				}
+			}
 			return true
 		}
 
@@ -58,6 +98,40 @@ func (s Seq[T]) IntersectBy[K comparable](other Seq[T], key func(T) K) Seq[T] {
 	})
 }
 
+// IntersectByHasher returns the first value from s for each key that also
+// occurs in other. Hasher defines hashing and equality for keys, so K need not
+// satisfy comparable. Values retain their order from s.
+func (s Seq[T]) IntersectByHasher[
+	K any,
+	H maphash.Hasher[K],
+](
+	other Seq[T],
+	key func(T) K,
+	hasher H,
+) Seq[T] {
+	return FromSeq(func(yield func(T) bool) {
+		otherKeys := hashmap.New[K, struct{}](hasher)
+		for value := range other.All() {
+			otherKeys.Set(key(value), struct{}{})
+		}
+
+		emitted := hashmap.New[K, struct{}](hasher)
+		for value := range s.All() {
+			valueKey := key(value)
+			if !otherKeys.ContainsKey(valueKey) {
+				continue
+			}
+			if _, exists := emitted.Set(valueKey, struct{}{}); exists {
+				continue
+			}
+
+			if !yield(value) {
+				return
+			}
+		}
+	})
+}
+
 // ExceptBy returns the first value from s for each key that does not occur in
 // other. Values retain their order from s.
 func (s Seq[T]) ExceptBy[K comparable](other Seq[T], key func(T) K) Seq[T] {
@@ -78,6 +152,40 @@ func (s Seq[T]) ExceptBy[K comparable](other Seq[T], key func(T) K) Seq[T] {
 			}
 
 			emitted[valueKey] = struct{}{}
+			if !yield(value) {
+				return
+			}
+		}
+	})
+}
+
+// ExceptByHasher returns the first value from s for each key that does not
+// occur in other. Hasher defines hashing and equality for keys, so K need not
+// satisfy comparable. Values retain their order from s.
+func (s Seq[T]) ExceptByHasher[
+	K any,
+	H maphash.Hasher[K],
+](
+	other Seq[T],
+	key func(T) K,
+	hasher H,
+) Seq[T] {
+	return FromSeq(func(yield func(T) bool) {
+		excluded := hashmap.New[K, struct{}](hasher)
+		for value := range other.All() {
+			excluded.Set(key(value), struct{}{})
+		}
+
+		emitted := hashmap.New[K, struct{}](hasher)
+		for value := range s.All() {
+			valueKey := key(value)
+			if excluded.ContainsKey(valueKey) {
+				continue
+			}
+			if _, exists := emitted.Set(valueKey, struct{}{}); exists {
+				continue
+			}
+
 			if !yield(value) {
 				return
 			}

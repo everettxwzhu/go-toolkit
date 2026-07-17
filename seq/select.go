@@ -1,5 +1,11 @@
 package seq
 
+import (
+	"hash/maphash"
+
+	"github.com/everettxwzhu/go-toolkit/hashmap"
+)
+
 // Filter returns a sequence containing only values for which predicate returns
 // true. Values retain their original order.
 func (s Seq[T]) Filter(predicate func(T) bool) Seq[T] {
@@ -111,6 +117,32 @@ func (s Seq[T]) DistinctBy[K comparable](key func(T) K) Seq[T] {
 			}
 
 			seen[k] = struct{}{}
+
+			if !yield(value) {
+				return
+			}
+		}
+	})
+}
+
+// DistinctByHasher returns a sequence containing the first value for each
+// distinct key produced by key. Hasher defines hashing and equality for keys,
+// so K need not satisfy comparable. Values retain their original order.
+func (s Seq[T]) DistinctByHasher[
+	K any,
+	H maphash.Hasher[K],
+](
+	key func(T) K,
+	hasher H,
+) Seq[T] {
+	return FromSeq(func(yield func(T) bool) {
+		seen := hashmap.New[K, struct{}](hasher)
+
+		for value := range s.All() {
+			_, exists := seen.Set(key(value), struct{}{})
+			if exists {
+				continue
+			}
 
 			if !yield(value) {
 				return
