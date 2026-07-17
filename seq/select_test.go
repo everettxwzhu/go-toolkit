@@ -85,3 +85,23 @@ func TestDistinctBy(t *testing.T) {
 		t.Fatalf("DistinctBy().Collect() = %v, want %v", got, want)
 	}
 }
+
+func TestStepBy(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		step int
+		want []int
+	}{
+		{name: "one", step: 1, want: []int{0, 1, 2, 3, 4, 5, 6}},
+		{name: "two", step: 2, want: []int{0, 2, 4, 6}},
+		{name: "larger than sequence", step: 10, want: []int{0}},
+		{name: "zero", step: 0, want: nil},
+		{name: "negative", step: -1, want: nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := seq.Range(0, 7).StepBy(tt.step).Collect(); !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("StepBy(%d).Collect() = %v, want %v", tt.step, got, tt.want)
+			}
+		})
+	}
+}

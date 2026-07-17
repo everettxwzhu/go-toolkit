@@ -3,10 +3,12 @@ package option_test
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/everettxwzhu/go-toolkit/option"
 	"github.com/everettxwzhu/go-toolkit/result"
+	"github.com/everettxwzhu/go-toolkit/tuple"
 )
 
 func TestFold(t *testing.T) {
@@ -178,5 +180,157 @@ func TestFromResult(t *testing.T) {
 	}
 	if _, ok := option.FromResult(result.Err[int](errors.New("failed"))).Get(); ok {
 		t.Fatal("FromResult(Err).IsSome() = true, want false")
+	}
+}
+
+func TestZip(t *testing.T) {
+	got := option.Zip(option.Some(1), option.Some("one"))
+	if value, ok := got.Get(); !ok || value != tuple.New(1, "one") {
+		t.Fatalf("Zip(Some, Some).Get() = (%v, %t), want (%v, true)", value, ok, tuple.New(1, "one"))
+	}
+
+	if option.Zip(option.None[int](), option.Some("one")).IsSome() {
+		t.Fatal("Zip(None, Some).IsSome() = true, want false")
+	}
+	if option.Zip(option.Some(1), option.None[string]()).IsSome() {
+		t.Fatal("Zip(Some, None).IsSome() = true, want false")
+	}
+}
+
+func TestExists(t *testing.T) {
+	if !option.Some(4).Exists(func(value int) bool { return value%2 == 0 }) {
+		t.Fatal("Some(4).Exists(even) = false, want true")
+	}
+	if option.Some(3).Exists(func(value int) bool { return value%2 == 0 }) {
+		t.Fatal("Some(3).Exists(even) = true, want false")
+	}
+
+	called := false
+	if option.None[int]().Exists(func(int) bool {
+		called = true
+		return true
+	}) {
+		t.Fatal("None.Exists() = true, want false")
+	}
+	if called {
+		t.Fatal("Exists predicate called for None")
+	}
+}
+
+func TestContainsBy(t *testing.T) {
+	equal := func(left, right string) bool {
+		return len(left) == len(right)
+	}
+	if !option.Some("one").ContainsBy("two", equal) {
+		t.Fatal(`Some("one").ContainsBy("two") = false, want true`)
+	}
+	if option.Some("one").ContainsBy("four", equal) {
+		t.Fatal(`Some("one").ContainsBy("four") = true, want false`)
+	}
+
+	called := false
+	if option.None[string]().ContainsBy("one", func(string, string) bool {
+		called = true
+		return true
+	}) {
+		t.Fatal("None.ContainsBy() = true, want false")
+	}
+	if called {
+		t.Fatal("ContainsBy equal called for None")
+	}
+}
+
+func TestToSlice(t *testing.T) {
+	if got, want := option.Some(0).ToSlice(), []int{0}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Some(0).ToSlice() = %v, want %v", got, want)
+	}
+	if got := option.None[int]().ToSlice(); got == nil || len(got) != 0 {
+		t.Fatalf("None[int]().ToSlice() = %#v, want a non-nil empty slice", got)
+	}
+}
+
+func TestTranspose(t *testing.T) {
+	someOK := option.Transpose(option.Some(result.Ok(42)))
+	if value, err := someOK.Get(); err != nil {
+		t.Fatalf("Transpose(Some(Ok)).Get() error = %v, want nil", err)
+	} else if got, ok := value.Get(); !ok || got != 42 {
+		t.Fatalf("transposed value.Get() = (%d, %t), want (42, true)", got, ok)
+	}
+
+	wantErr := errors.New("failed")
+	if _, err := option.Transpose(option.Some(result.Err[int](wantErr))).Get(); err != wantErr {
+		t.Fatalf("Transpose(Some(Err)).Get() error = %v, want %v", err, wantErr)
+	}
+
+	none := option.Transpose(option.None[result.Result[int]]())
+	if value, err := none.Get(); err != nil {
+		t.Fatalf("Transpose(None).Get() error = %v, want nil", err)
+	} else if value.IsSome() {
+		t.Fatal("Transpose(None) contains Some, want None")
+	}
+}
+
+func TestSequence(t *testing.T) {
+	got := option.Sequence([]option.Option[int]{
+		option.Some(1),
+		option.Some(2),
+		option.Some(3),
+	})
+	if values, ok := got.Get(); !ok || !reflect.DeepEqual(values, []int{1, 2, 3}) {
+		t.Fatalf("Sequence(all Some).Get() = (%v, %t), want ([1 2 3], true)", values, ok)
+	}
+
+	if option.Sequence([]option.Option[int]{
+		option.Some(1),
+		option.None[int](),
+		option.Some(3),
+	}).IsSome() {
+		t.Fatal("Sequence(with None).IsSome() = true, want false")
+	}
+
+	empty, ok := option.Sequence([]option.Option[int]{}).Get()
+	if !ok || empty == nil || len(empty) != 0 {
+		t.Fatalf("Sequence(empty).Get() = (%#v, %t), want (non-nil empty slice, true)", empty, ok)
+	}
+}
+
+func TestTraverse(t *testing.T) {
+	var visited []int
+	got := option.Traverse([]int{1, 2, 3}, func(value int) option.Option[string] {
+		visited = append(visited, value)
+		return option.Some(fmt.Sprintf("v%d", value))
+	})
+	if values, ok := got.Get(); !ok || !reflect.DeepEqual(values, []string{"v1", "v2", "v3"}) {
+		t.Fatalf("Traverse(all Some).Get() = (%v, %t), want ([v1 v2 v3], true)", values, ok)
+	}
+	if !reflect.DeepEqual(visited, []int{1, 2, 3}) {
+		t.Fatalf("Traverse visit order = %v, want [1 2 3]", visited)
+	}
+
+	visited = nil
+	failed := option.Traverse([]int{1, 2, 3, 4}, func(value int) option.Option[int] {
+		visited = append(visited, value)
+		if value == 3 {
+			return option.None[int]()
+		}
+		return option.Some(value * 10)
+	})
+	if failed.IsSome() {
+		t.Fatal("Traverse(with None).IsSome() = true, want false")
+	}
+	if !reflect.DeepEqual(visited, []int{1, 2, 3}) {
+		t.Fatalf("failed Traverse visit order = %v, want [1 2 3]", visited)
+	}
+}
+
+func TestContains(t *testing.T) {
+	if !option.Contains(option.Some("value"), "value") {
+		t.Fatal(`Contains(Some("value"), "value") = false, want true`)
+	}
+	if option.Contains(option.Some("value"), "other") {
+		t.Fatal(`Contains(Some("value"), "other") = true, want false`)
+	}
+	if option.Contains(option.None[string](), "") {
+		t.Fatal(`Contains(None, "") = true, want false`)
 	}
 }

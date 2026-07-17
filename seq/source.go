@@ -4,7 +4,7 @@ import "iter"
 
 // Empty returns a sequence that contains no values.
 func Empty[T any]() Seq[T] {
-	return Seq[T]{}
+	return Seq[T]{source: func(yield func(T) bool) {}}
 }
 
 // FromSeq wraps source as a Seq.

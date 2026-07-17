@@ -118,3 +118,21 @@ func (s Seq[T]) DistinctBy[K comparable](key func(T) K) Seq[T] {
 		}
 	})
 }
+
+// StepBy returns a sequence containing the first value of s and every step-th
+// value after it. It returns an empty sequence when step is not positive.
+func (s Seq[T]) StepBy(step int) Seq[T] {
+	if step <= 0 {
+		return Empty[T]()
+	}
+
+	return FromSeq(func(yield func(T) bool) {
+		i := 0
+		for v := range s.All() {
+			if i%step == 0 && !yield(v) {
+				return
+			}
+			i++
+		}
+	})
+}

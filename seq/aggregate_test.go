@@ -26,3 +26,23 @@ func TestToMapLastValueWins(t *testing.T) {
 		t.Fatalf("ToMap() = %v, want %v", got, want)
 	}
 }
+
+func TestCountBy(t *testing.T) {
+	got := seq.Of("one", "two", "three", "six").CountBy(func(value string) int {
+		return len(value)
+	})
+	want := map[int]int{3: 3, 5: 1}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("CountBy() = %v, want %v", got, want)
+	}
+}
+
+func TestIndexByLastValueWins(t *testing.T) {
+	got := seq.Of("one", "two", "three", "six").IndexBy(func(value string) int {
+		return len(value)
+	})
+	want := map[int]string{3: "six", 5: "three"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("IndexBy() = %v, want %v", got, want)
+	}
+}
